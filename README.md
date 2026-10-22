@@ -1,7 +1,4 @@
 # experiment333
-计算机视觉实验三
-<font face="黑体" size=12><center>实验三、图像拼接</center></font>
-
 <font face="宋体" size=4>
 <b>
 <!--文件头 第一行 需要改动!!!!!!!!-->
@@ -67,22 +64,51 @@ dst_pts = np.float32([kp_a[m.queryIdx].pt for m in good_matches]).reshape(-1, 1,
 H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
 ```
 
-## 6、拟合单应矩阵
-
-- 首先定义单应矩阵的计算函数 `solve_homography()` ，如下所示：
-
+## 6、图像尺寸确定
+- 获取输入图像尺寸，计算图像b变换后的四个角点坐标，确定拼接后图像的最终尺寸
 ```python
+h_a, w_a = img_a.shape[:2]
+h_b, w_b = img_b.shape[:2]
 
+pts = np.float32([[0, 0], [0, h_b], [w_b, h_b], [w_b, 0]]).reshape(-1, 1, 2)
+dst_corners = cv2.perspectiveTransform(pts, H)
+
+all_corners = np.concatenate([dst_corners, np.float32([[0,0], [w_a,0], [w_a,h_a], 
+[0,h_a]]).reshape(-1,1,2)], axis=0)
+[x_min, y_min] = np.int32(all_corners.min(axis=0).ravel() - 0.5)
+[x_max, y_max] = np.int32(all_corners.max(axis=0).ravel() + 0.5)
 ```
-
-- 基于 RANSAC 算法，定义了 `fitHomoMat(matches_pos,nIter, th)` 函数，其基本思路如下：
-  1. 首先将输入的匹配点对划分为源点集与目标点集，抽样计算初始单应矩阵  `𝐻` 。
-  2. 将初始矩阵 `𝐻` 于所有源点进行投影变换，计算投影位置与实际目标点间的欧氏距离。若该距离小于设定阈值 `th` ，则认为该点对为内点（`inlier`）。
-  3. 迭代（`nIter`）次比较各模型内点数量，选取内点最多的模型作为最优单应矩阵。
-
+## 7、图像拼接
+- 创建平移矩阵，确保所有像素都在可见区域内
+- 对图像b进行透视变换和平移
+- 将图像a复制到拼接结果的对应位置，显示匹配关键点和拼接结果，保存拼接结果
 ```python
+translation_matrix = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]], dtype=np.float32)
 
+stitched_img = cv2.warpPerspective(
+img_b,
+translation_matrix @ H, 
+(x_max - x_min, y_max - y_min)
+)
+
+stitched_img[-y_min : h_a - y_min, -x_min : w_a - x_min] = img_a
+
+cv2.imshow('Matched SIFT Keypoints', matched_keypoints_img)  # 显示匹配的关键点
+cv2.imshow('Stitched Result', stitched_img)                  # 显示拼接后的图像
+cv2.waitKey(0)  # 等待用户按键（按任意键关闭窗口）
+cv2.destroyAllWindows()  # 关闭所有显示窗口
 ```
+-最终得到拼接图像如下：
+<img width="944" height="739" alt="image" src="https://github.com/user-attachments/assets/14b8b71b-50cd-4bd2-9aba-1d38ab2413a9" />
 
 # 三、实验总结与探索
-1、本实验手动实现了图像拼接过程，并对不同的融合策略进行了横向对比；比较了手动实现方式、实验参考代码（作为baseline）、OpenCV API 这三种方式在不同场景下的拼接效果。
+- 本次实验利用SIFT实现图像全景拼接，完成特征提取、FLANN匹配、RANSAC求解单应矩阵与透视变换，熟悉全景拼接完整流程。
+- Lowe比率控制误匹配数量，RANSAC进一步筛选有效内点，二者共同保障图像对齐的准确性。
+- 图像重叠度、纹理情况会直接影响拼接效果，后续可引入图像融合消除拼接缝隙。
+
+# 四、实验中遇到的问题与解决方案
+- 问题：初始特征匹配存在大量误匹配点，导致图像拼接错乱、拼接效果差。
+- 解决方案：通过调低Lowe比率阈值筛选优质匹配点，同时利用RANSAC算法剔除错误匹配外点，精准求解单应矩阵，有效修正图像透视位置，最终实现正常拼接。
+- 错误图像如下：
+- <img width="1280" height="800" alt="25fa741cf4c71c8ab84ba2e4a861e82" src="https://github.com/user-attachments/assets/804aafa3-c1a5-47f6-a5a8-f3e9aff02f6c" />
+
